@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	pickle "github.com/lomik/og-rek"
 	"github.com/lomik/zapwriter"
 	"github.com/satori/go.uuid"
+	protov3 "github.com/go-graphite/protocol/carbonapi_v3_pb"
 )
 
 // Find handler and it's helper functions
@@ -200,7 +202,19 @@ func findHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if len(query) == 0 {
+	if format == "carbonapi_v3_pb" {
+		body, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "missing request body", http.StatusBadRequest)
+			accessLogDetails.HTTPCode = http.StatusBadRequest
+			accessLogDetails.Reason = "missing request body"
+			logAsError = true
+			return
+		}
+		var pv3Request protov3.MultiGlobRequest
+		pv3Request.Unmarshal(body)
+		query = pv3Request.Metrics
+	} else if len(query) == 0 {
 		http.Error(w, "missing parameter `query`", http.StatusBadRequest)
 		accessLogDetails.HTTPCode = http.StatusBadRequest
 		accessLogDetails.Reason = "missing parameter `query`"
@@ -235,7 +249,7 @@ func findHandler(w http.ResponseWriter, r *http.Request) {
 	case rawFormat:
 		b, err = findList(multiGlobs)
 		format = rawFormat
-	case protobufFormat, protobuf3Format:
+	case protobufFormat, protobuf3Format, "carbonapi_v3_pb":
 		b, err = multiGlobs.Marshal()
 		format = protobufFormat
 	case "", pickleFormat:
